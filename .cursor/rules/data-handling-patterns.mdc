@@ -1,0 +1,307 @@
+---
+alwaysApply: true
+---
+# Data Handling & Server Architecture Patterns
+
+This flashcard application follows strict server-side data handling patterns for security, performance, and consistency.
+
+## Critical Architecture Rules
+
+### 1. Data Retrieval - Server Components ONLY
+
+**ALL data fetching MUST be done in Server Components** - never in Client Components or API routes for display purposes.
+
+```typescript
+// ✅ CORRECT - Server Component data fetching
+import { auth } from "@clerk/nextjs/server";
+import { db } from "@/lib/db";
+import { decksTable } from "@/lib/db/schema";
+import { eq } from "drizzle-orm";
+
+export default async function DecksPage() {
+  const { userId } = await auth();
+  
+  if (!userId) {
+    redirect("/sign-in");
+  }
+  
+  // Data retrieval in Server Component
+  const decks = await db.select()
+    .from(decksTable)
+    .where(eq(decksTable.userId, userId));
+  
+  return <DecksDisplay decks={decks} />;
+}
+```
+
+```typescript
+// ❌ FORBIDDEN - Client-side data fetching
+"use client";
+import { useEffect, useState } from "react";
+
+export default function DecksPage() {
+  const [decks, setDecks] = useState([]);
+  
+  useEffect(() => {
+    // NEVER fetch data in client components
+    fetch("/api/decks").then(res => res.json()).then(setDecks);
+  }, []);
+  
+  return <DecksDisplay decks={decks} />;
+}
+```
+
+### 2. Database Mutations - Server Actions ONLY
+
+**ALL database inserts, updates, and deletes MUST use Server Actions** - never API routes or client-side operations.
+
+```typescript
+// ✅ CORRECT - Server Action for mutations
+"use server";
+
+import { auth } from "@clerk/nextjs/server";
+import { db } from "@/lib/db";
+import { decksTable } from "@/lib/db/schema";
+import { createDeckSchema } from "@/lib/validations/deck";
+import { revalidatePath } from "next/cache";
+
+interface CreateDeckInput {
+  title: string;
+  description?: string;
+}
+
+export async function createDeck(input: CreateDeckInput) {
+  const { userId } = await auth();
+  
+  if (!userId) {
+    throw new Error("Authentication required");
+  }
+  
+  // Zod validation (required)
+  const validatedInput = createDeckSchema.parse(input);
+  
+  try {
+    const [newDeck] = await db.insert(decksTable).values({
+      title: validatedInput.title,
+      description: validatedInput.description,
+      userId,
+    }).returning();
+    
+    revalidatePath("/decks");
+    return { success: true, data: newDeck };
+  } catch (error) {
+    console.error("Failed to create deck:", error);
+    return { success: false, error: "Failed to create deck" };
+  }
+}
+```
+
+```typescript
+// ❌ FORBIDDEN - API route for mutations
+export async function POST(request: Request) {
+  // NEVER use API routes for database mutations
+  const body = await request.json();
+  await db.insert(decksTable).values(body);
+  return Response.json({ success: true });
+}
+```
+
+### 3. Data Validation - Zod Schemas REQUIRED
+
+**ALL data MUST be validated using Zod schemas** before any database operations.
+
+**Required Validation Setup:**
+```typescript
+// lib/validations/deck.ts
+import { z } from "zod";
+
+export const createDeckSchema = z.object({
+  title: z.string().min(1, "Title is required").max(100, "Title too long"),
+  description: z.string().max(500, "Description too long").optional(),
+});
+
+export const updateDeckSchema = z.object({
+  id: z.number().positive(),
+  title: z.string().min(1, "Title is required").max(100, "Title too long").optional(),
+  description: z.string().max(500, "Description too long").optional(),
+});
+
+export const createCardSchema = z.object({
+  deckId: z.number().positive(),
+  front: z.string().min(1, "Front content is required"),
+  back: z.string().min(1, "Back content is required"),
+});
+
+export type CreateDeckInput = z.infer<typeof createDeckSchema>;
+export type UpdateDeckInput = z.infer<typeof updateDeckSchema>;
+export type CreateCardInput = z.infer<typeof createCardSchema>;
+```
+
+### 4. Server Action Input Patterns
+
+**NEVER use FormData as parameter type** - always use typed interfaces with Zod validation.
+
+```typescript
+// ✅ CORRECT - Typed input with Zod validation
+interface UpdateCardInput {
+  id: number;
+  front?: string;
+  back?: string;
+}
+
+export async function updateCard(input: UpdateCardInput) {
+  const validatedInput = updateCardSchema.parse(input);
+  // ... rest of implementation
+}
+```
+
+```typescript
+// ❌ FORBIDDEN - FormData parameter
+export async function updateCard(formData: FormData) {
+  const front = formData.get("front") as string; // Unsafe!
+  // ... rest of implementation
+}
+```
+
+### 5. Client Component Integration
+
+**Client Components receive validated, typed data as props** and call Server Actions for mutations.
+
+```typescript
+// ✅ CORRECT - Client Component pattern
+"use client";
+
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { updateCard } from "@/lib/actions/cards";
+
+interface FlashcardProps {
+  card: {
+    id: number;
+    front: string;
+    back: string;
+  };
+}
+
+export function Flashcard({ card }: FlashcardProps) {
+  const handleUpdate = async () => {
+    const result = await updateCard({
+      id: card.id,
+      front: "Updated front",
+      back: "Updated back"
+    });
+    
+    if (!result.success) {
+      console.error("Update failed:", result.error);
+    }
+  };
+  
+  return (
+    <Card>
+      <CardContent>
+        <p>{card.front}</p>
+        <Button onClick={handleUpdate}>Update</Button>
+      </CardContent>
+    </Card>
+  );
+}
+```
+
+## Required File Structure
+
+### Server Actions Directory
+```
+lib/
+├── actions/
+│   ├── decks.ts      # Deck-related server actions
+│   ├── cards.ts      # Card-related server actions
+│   └── index.ts      # Export all actions
+└── validations/
+    ├── deck.ts       # Deck Zod schemas
+    ├── card.ts       # Card Zod schemas
+    └── index.ts      # Export all schemas
+```
+
+### Validation Imports
+```typescript
+import { z } from "zod";
+import { createDeckSchema, updateDeckSchema } from "@/lib/validations/deck";
+import { createCardSchema, updateCardSchema } from "@/lib/validations/card";
+```
+
+## Error Handling Patterns
+
+### Server Action Error Handling
+```typescript
+export async function createDeck(input: CreateDeckInput) {
+  try {
+    const { userId } = await auth();
+    
+    if (!userId) {
+      return { success: false, error: "Authentication required" };
+    }
+    
+    const validatedInput = createDeckSchema.parse(input);
+    
+    const [newDeck] = await db.insert(decksTable).values({
+      ...validatedInput,
+      userId,
+    }).returning();
+    
+    revalidatePath("/decks");
+    return { success: true, data: newDeck };
+    
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return { 
+        success: false, 
+        error: "Invalid input data",
+        details: error.issues 
+      };
+    }
+    
+    console.error("Server action error:", error);
+    return { success: false, error: "Internal server error" };
+  }
+}
+```
+
+## Mandatory Checklist
+
+For EVERY data operation, verify:
+
+1. ✅ **Server Component**: Data fetching done in Server Component
+2. ✅ **Server Action**: Mutations done via Server Actions (not API routes)
+3. ✅ **Zod Validation**: Input validated with Zod schema
+4. ✅ **TypeScript Types**: Proper TypeScript interfaces (not FormData)
+5. ✅ **Auth Check**: User authentication verified
+6. ✅ **Error Handling**: Proper error handling with typed responses
+7. ✅ **Revalidation**: `revalidatePath()` called after mutations
+
+## Anti-Patterns to AVOID
+
+### ❌ Client-Side Data Fetching
+```typescript
+// NEVER do this
+const { data } = useSWR("/api/decks", fetch);
+```
+
+### ❌ API Routes for Mutations
+```typescript
+// NEVER do this
+export async function POST() { /* mutation logic */ }
+```
+
+### ❌ Unvalidated Data
+```typescript
+// NEVER do this
+export async function createDeck(input: any) { /* no validation */ }
+```
+
+### ❌ FormData Parameters
+```typescript
+// NEVER do this
+export async function createDeck(formData: FormData) { /* unsafe */ }
+```
+
+**CRITICAL**: These patterns are not suggestions - they are mandatory for security, type safety, and maintainability. All code MUST follow these patterns.

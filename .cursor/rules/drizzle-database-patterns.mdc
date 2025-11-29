@@ -1,0 +1,122 @@
+---
+alwaysApply: true
+---
+# Drizzle Database Interaction Patterns
+
+All database interactions in this flashcard application MUST use the Drizzle ORM with the defined schema from [lib/db/schema.ts](mdc:lib/db/schema.ts).
+
+## Required Schema Usage
+
+### Tables Available
+- **decksTable**: Flashcard decks with `id`, `title`, `description`, `userId`, `createdAt`, `updatedAt`
+- **cardsTable**: Individual flashcards with `id`, `deckId`, `front`, `back`, `createdAt`, `updatedAt`
+
+### Database Connection
+Always import the database connection from [lib/db/index.ts](mdc:lib/db/index.ts):
+
+```typescript
+import { db } from "@/lib/db";
+import { decksTable, cardsTable } from "@/lib/db/schema";
+```
+
+## Required Patterns
+
+### Query Examples (ALWAYS follow these patterns)
+
+**Select Operations:**
+```typescript
+// Get all decks for a user
+const userDecks = await db.select().from(decksTable).where(eq(decksTable.userId, userId));
+
+// Get deck with cards
+const deckWithCards = await db.select().from(decksTable)
+  .leftJoin(cardsTable, eq(cardsTable.deckId, decksTable.id))
+  .where(eq(decksTable.id, deckId));
+
+// Get cards for a specific deck
+const cards = await db.select().from(cardsTable).where(eq(cardsTable.deckId, deckId));
+```
+
+**Insert Operations:**
+```typescript
+// Create new deck
+const [newDeck] = await db.insert(decksTable).values({
+  title,
+  description,
+  userId, // Always required - use Clerk user ID
+}).returning();
+
+// Create new card
+const [newCard] = await db.insert(cardsTable).values({
+  deckId,
+  front,
+  back,
+}).returning();
+```
+
+**Update Operations:**
+```typescript
+// Update deck
+await db.update(decksTable)
+  .set({ title, description, updatedAt: new Date() })
+  .where(eq(decksTable.id, deckId));
+
+// Update card
+await db.update(cardsTable)
+  .set({ front, back, updatedAt: new Date() })
+  .where(eq(cardsTable.id, cardId));
+```
+
+**Delete Operations:**
+```typescript
+// Delete deck (cards will cascade delete)
+await db.delete(decksTable).where(eq(decksTable.id, deckId));
+
+// Delete specific card
+await db.delete(cardsTable).where(eq(cardsTable.id, cardId));
+```
+
+## Mandatory Rules
+
+1. **NEVER use raw SQL queries** - always use Drizzle query builder
+2. **ALWAYS import required operators** (eq, and, or, etc.) from `drizzle-orm`
+3. **ALWAYS use .returning()** for insert/update operations when you need the result
+4. **ALWAYS include userId filter** when fetching decks to ensure user isolation
+5. **ALWAYS use the cascade relationship** - deleting a deck automatically deletes its cards
+6. **NEVER access database without proper error handling** - wrap in try/catch
+7. **ALWAYS validate deckId belongs to userId** before allowing card operations
+
+## Required Imports
+```typescript
+import { db } from "@/lib/db";
+import { decksTable, cardsTable } from "@/lib/db/schema";
+import { eq, and, or, desc, asc } from "drizzle-orm";
+```
+
+## Security Pattern
+Always verify deck ownership before card operations:
+
+```typescript
+// Verify deck belongs to user before card operations
+const deckExists = await db.select({ id: decksTable.id })
+  .from(decksTable)
+  .where(and(eq(decksTable.id, deckId), eq(decksTable.userId, userId)))
+  .limit(1);
+
+if (!deckExists.length) {
+  throw new Error("Deck not found or access denied");
+}
+```
+
+## Error Handling Pattern
+```typescript
+try {
+  const result = await db.select()...;
+  return { success: true, data: result };
+} catch (error) {
+  console.error("Database operation failed:", error);
+  return { success: false, error: "Database operation failed" };
+}
+```
+
+**CRITICAL**: Never bypass these patterns. Always use the schema types and query builder for type safety and consistency.

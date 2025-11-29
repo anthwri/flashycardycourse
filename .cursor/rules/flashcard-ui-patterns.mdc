@@ -1,0 +1,75 @@
+---
+globs: *.tsx,*.ts
+description: "UI patterns and components specific to flashcard course application"
+---
+
+# Flashcard Course UI Patterns
+
+This project is a flashcard-based learning application. Follow these UI patterns and component guidelines when building educational interfaces.
+
+## Common UI Components Needed
+
+### Flashcard Components
+- **Card Container**: Use shadcn UI `Card` with flip animations
+- **Progress Indicators**: Use `Progress` component for learning progress
+- **Navigation**: Use `Button` with appropriate variants for next/previous
+- **Status Badges**: Use `Badge` for difficulty, mastery level, or categories
+
+### Course Structure Components
+- **Course Cards**: Use `Card` with `CardHeader`, `CardContent` for course listings
+- **Lesson Navigation**: Use `Tabs` or `NavigationMenu` for course sections
+- **Study Statistics**: Use `Card` with charts/progress indicators
+
+### Interactive Elements
+- **Answer Buttons**: Use `Button` with variants (correct: success, incorrect: destructive)
+- **Study Mode Toggle**: Use `RadioGroup` or `ToggleGroup`
+- **Filter Controls**: Use `Select` and `Checkbox` for content filtering
+
+## Design Patterns
+
+### Responsive Flashcard Layout
+```tsx
+<Card className="w-full max-w-lg mx-auto aspect-[3/2] relative">
+  <CardContent className="flex items-center justify-center h-full p-8">
+    {/* Flashcard content */}
+  </CardContent>
+</Card>
+```
+
+### Progress Display
+```tsx
+<div className="space-y-2">
+  <div className="flex justify-between text-sm">
+    <span>Progress</span>
+    <span>{current}/{total}</span>
+  </div>
+  <Progress value={(current / total) * 100} className="h-2" />
+</div>
+```
+
+### Study Session Controls
+```tsx
+<div className="flex justify-between items-center gap-4">
+  <Button variant="outline" size="sm">Previous</Button>
+  <Button variant="ghost" size="sm">Flip Card</Button>
+  <Button variant="outline" size="sm">Next</Button>
+</div>
+```
+
+## Color Scheme for Learning States
+- **Correct/Mastered**: Use `success` or `default` variants
+- **Incorrect/Needs Review**: Use `destructive` variant  
+- **In Progress**: Use `secondary` variant
+- **Not Started**: Use `outline` variant
+
+## Accessibility Considerations
+- Use proper ARIA labels for card states (front/back)
+- Ensure keyboard navigation between cards
+- Provide screen reader announcements for progress
+- Use sufficient color contrast for text on cards
+
+## Animation Guidelines
+- Keep animations subtle and educational-focused
+- Use CSS transforms for card flip effects
+- Provide reduced motion alternatives
+- Maintain 60fps for smooth learning experience

@@ -1,0 +1,113 @@
+---
+alwaysApply: true
+---
+# shadcn UI Component Library Guide
+
+This project uses **shadcn UI** for ALL UI elements. shadcn UI provides beautifully designed, accessible, and customizable components built with Radix UI and Tailwind CSS.
+
+## Project Status
+- **Framework**: Next.js with TypeScript
+- **Styling**: Tailwind CSS (already configured)
+- **shadcn UI Status**: Not yet initialized
+
+## Initial Setup
+
+If shadcn UI is not initialized in the project (no `components.json` file exists), run:
+
+```bash
+echo y | npx shadcn@latest init --yes
+```
+
+This command will:
+- Create a `components.json` configuration file
+- Set up the component directory structure
+- Configure Tailwind CSS for shadcn UI
+- Install necessary dependencies
+
+## Adding Components
+
+To install specific shadcn UI components, use:
+
+```bash
+npx shadcn@latest add [component-name]
+```
+
+### Common Components Examples:
+```bash
+# UI Basics
+npx shadcn@latest add button
+npx shadcn@latest add input
+npx shadcn@latest add label
+npx shadcn@latest add card
+
+# Form Components
+npx shadcn@latest add form
+npx shadcn@latest add select
+npx shadcn@latest add textarea
+npx shadcn@latest add checkbox
+npx shadcn@latest add radio-group
+
+# Navigation
+npx shadcn@latest add navigation-menu
+npx shadcn@latest add tabs
+npx shadcn@latest add breadcrumb
+
+# Feedback
+npx shadcn@latest add alert
+npx shadcn@latest add toast
+npx shadcn@latest add dialog
+npx shadcn@latest add popover
+
+# Data Display
+npx shadcn@latest add table
+npx shadcn@latest add badge
+npx shadcn@latest add avatar
+npx shadcn@latest add progress
+```
+
+## Component Usage Guidelines
+
+1. **Always use shadcn UI components** instead of custom HTML elements or other UI libraries
+2. **Import components** from the local components directory (typically `@/components/ui/`)
+3. **Customize styling** using Tailwind CSS classes when needed
+4. **Follow accessibility patterns** provided by shadcn UI components
+5. **Use TypeScript properly** with component props and interfaces
+
+## File Structure After Initialization
+
+```
+├── components/
+│   └── ui/           # shadcn UI components will be installed here
+├── lib/
+│   └── utils.ts      # Utility functions (includes cn() helper)
+└── components.json   # shadcn UI configuration
+```
+
+## Example Component Usage
+
+```tsx
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+
+export function ExampleComponent() {
+  return (
+    <Card className="w-full max-w-md">
+      <CardHeader>
+        <CardTitle>Example Card</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <Button variant="default" size="md">
+          Click me
+        </Button>
+      </CardContent>
+    </Card>
+  )
+}
+```
+
+## Important Notes
+
+- **No other UI libraries** should be used in this project
+- **Always check** if a component exists in shadcn UI before creating custom components
+- **Prefer composition** over customization when building complex UI elements
+- **Use the `cn()` utility** from `@/lib/utils` for conditional className merging

@@ -1,0 +1,213 @@
+---
+alwaysApply: true
+description: "Clerk authentication patterns and user data isolation security"
+---
+
+# Clerk Authentication & Data Security Patterns
+
+This flashcard application uses **Clerk** for authentication. ALL user data MUST be properly isolated to ensure users can only access their own data.
+
+## Critical Security Requirements
+
+### 1. MANDATORY User ID Validation
+**EVERY database operation that accesses user data MUST include user ID filtering:**
+
+```typescript
+import { auth } from "@clerk/nextjs/server";
+
+// Get current user ID (ALWAYS required for data operations)
+const { userId } = await auth();
+
+if (!userId) {
+  throw new Error("Unauthorized - User must be logged in");
+}
+
+// ALWAYS filter by userId when accessing user data
+const userDecks = await db.select()
+  .from(decksTable)
+  .where(eq(decksTable.userId, userId)); // REQUIRED
+```
+
+### 2. Route Protection Patterns
+
+**API Routes** - MUST verify authentication:
+```typescript
+import { auth } from "@clerk/nextjs/server";
+
+export async function GET() {
+  const { userId } = await auth();
+  
+  if (!userId) {
+    return new Response("Unauthorized", { status: 401 });
+  }
+  
+  // Continue with userId-filtered data access
+}
+```
+
+**Server Components** - Redirect if not authenticated:
+```typescript
+import { auth } from "@clerk/nextjs/server";
+import { redirect } from "next/navigation";
+
+export default async function DeckPage() {
+  const { userId } = await auth();
+  
+  if (!userId) {
+    redirect("/sign-in");
+  }
+  
+  // Safe to access user data with userId
+}
+```
+
+**Server Actions** - Always validate user:
+```typescript
+"use server";
+import { auth } from "@clerk/nextjs/server";
+
+export async function createDeck(formData: FormData) {
+  const { userId } = await auth();
+  
+  if (!userId) {
+    throw new Error("Authentication required");
+  }
+  
+  // REQUIRED: Include userId in database operations
+  await db.insert(decksTable).values({
+    title: formData.get("title") as string,
+    userId, // CRITICAL - ensures deck belongs to user
+  });
+}
+```
+
+## Data Access Security Patterns
+
+### ✅ CORRECT - Always Filter by User ID
+```typescript
+// Getting user's decks
+const userDecks = await db.select()
+  .from(decksTable)
+  .where(eq(decksTable.userId, userId));
+
+// Getting cards from user's deck (with ownership verification)
+const deckExists = await db.select({ id: decksTable.id })
+  .from(decksTable)
+  .where(and(eq(decksTable.id, deckId), eq(decksTable.userId, userId)))
+  .limit(1);
+
+if (!deckExists.length) {
+  throw new Error("Deck not found or access denied");
+}
+
+const cards = await db.select()
+  .from(cardsTable)
+  .where(eq(cardsTable.deckId, deckId));
+```
+
+### ❌ FORBIDDEN - Direct Access Without User Filtering
+```typescript
+// NEVER DO THIS - allows access to any user's data
+const allDecks = await db.select().from(decksTable);
+
+// NEVER DO THIS - no ownership verification
+const cards = await db.select()
+  .from(cardsTable)
+  .where(eq(cardsTable.deckId, deckId));
+```
+
+## Required Import Patterns
+
+### Authentication Imports
+```typescript
+// Server-side authentication
+import { auth } from "@clerk/nextjs/server";
+
+// Client-side components (when needed)
+import { useUser, SignInButton, UserButton } from "@clerk/nextjs";
+```
+
+### Database Operations with Auth
+```typescript
+import { auth } from "@clerk/nextjs/server";
+import { db } from "@/lib/db";
+import { decksTable, cardsTable } from "@/lib/db/schema";
+import { eq, and } from "drizzle-orm";
+```
+
+## Middleware Configuration
+
+The [middleware.ts](mdc:middleware.ts) file MUST protect all application routes:
+
+```typescript
+import { clerkMiddleware } from "@clerk/nextjs/server";
+
+export default clerkMiddleware();
+
+export const config = {
+  matcher: [
+    "/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)",
+    "/(api|trpc)(.*)",
+  ],
+};
+```
+
+## User Data Isolation Checklist
+
+Before implementing ANY data operation, verify:
+
+1. ✅ **Authentication Check**: `const { userId } = await auth()` called first
+2. ✅ **Authorization Check**: User ID is not null/undefined  
+3. ✅ **Data Filtering**: ALL database queries include `userId` filter
+4. ✅ **Ownership Verification**: When accessing related data (cards), verify deck belongs to user
+5. ✅ **Error Handling**: Proper error responses for unauthorized access
+
+## Common Anti-Patterns to AVOID
+
+### ❌ Missing User ID Filter
+```typescript
+// WRONG - exposes all users' data
+const decks = await db.select().from(decksTable);
+```
+
+### ❌ Trusting Client-Side Data
+```typescript
+// WRONG - client could send any deckId
+async function deleteCard(cardId: number, deckId: number) {
+  // Missing: verify deck belongs to current user
+  await db.delete(cardsTable).where(eq(cardsTable.id, cardId));
+}
+```
+
+### ❌ Skipping Authentication
+```typescript
+// WRONG - no auth check
+export async function GET() {
+  const decks = await db.select().from(decksTable); // Exposes all data!
+}
+```
+
+## Error Messages for Security
+
+Use consistent, secure error messages:
+
+```typescript
+// Good - doesn't reveal whether resource exists
+if (!deckExists.length) {
+  throw new Error("Deck not found or access denied");
+}
+
+// Bad - reveals system information
+// throw new Error("Deck with ID 123 does not exist");
+```
+
+## CRITICAL RULES
+
+1. **NEVER** bypass user ID filtering - it's not optional
+2. **ALWAYS** verify authentication before data access
+3. **NEVER** trust client-sent user IDs - always use server-side auth
+4. **ALWAYS** verify resource ownership before operations
+5. **NEVER** expose other users' data in error messages or logs
+6. **ALWAYS** use the cascade delete relationship (deck -> cards)
+
+**FAILURE TO FOLLOW THESE PATTERNS CREATES SECURITY VULNERABILITIES**
