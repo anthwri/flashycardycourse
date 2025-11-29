@@ -2,14 +2,10 @@ import type { Metadata } from "next";
 import { Poppins } from "next/font/google";
 import {
   ClerkProvider,
-  SignInButton,
-  SignUpButton,
   SignedIn,
   SignedOut,
-  UserButton,
 } from "@clerk/nextjs";
-import { dark } from "@clerk/themes";
-import { Button } from "@/components/ui/button";
+import { SignInButton, SignUpButton, UserProfileButton } from "@/components/auth-components";
 import "./globals.css";
 
 const poppins = Poppins({
@@ -30,7 +26,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <ClerkProvider appearance={{ baseTheme: dark }}>
+    <ClerkProvider>
       <html lang="en" className="dark">
         <body
           className={`${poppins.variable} font-sans antialiased`}
@@ -42,19 +38,11 @@ export default function RootLayout({
               </div>
               <div className="flex items-center space-x-2">
                 <SignedOut>
-                  <SignInButton mode="modal">
-                    <Button variant="outline" size="lg">
-                      Sign In
-                    </Button>
-                  </SignInButton>
-                  <SignUpButton mode="modal">
-                    <Button variant="default" size="lg">
-                      Sign Up
-                    </Button>
-                  </SignUpButton>
+                  <SignInButton />
+                  <SignUpButton />
                 </SignedOut>
                 <SignedIn>
-                  <UserButton afterSignOutUrl="/" />
+                  <UserProfileButton />
                 </SignedIn>
               </div>
             </div>

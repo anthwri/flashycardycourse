@@ -1,13 +1,31 @@
 ---
 alwaysApply: true
 ---
-# shadcn UI Component Library Guide
+# shadcn UI Component Library Guide - MANDATORY USAGE ONLY
 
-This project uses **shadcn UI** for ALL UI elements. shadcn UI provides beautifully designed, accessible, and customizable components built with Radix UI and Tailwind CSS.
+This project uses **EXCLUSIVELY shadcn UI** for ALL UI elements. NO custom UI components, HTML elements, or other UI libraries are permitted.
+
+## 🚨 CRITICAL UI POLICY 🚨
+
+**ABSOLUTE PROHIBITION**: This project FORBIDS all custom UI creation. Every visual element MUST use shadcn UI components.
+
+### ❌ FORBIDDEN PRACTICES
+- **NEVER** create custom UI components (buttons, cards, inputs, etc.)
+- **NEVER** use plain HTML elements for UI (`<button>`, `<div>`, `<input>`, etc.)
+- **NEVER** use any other UI libraries (Material-UI, Ant Design, Chakra UI, etc.)
+- **NEVER** create custom styled components outside of shadcn UI patterns
+- **NEVER** build from scratch what shadcn UI already provides
+
+### ✅ MANDATORY PRACTICES  
+- **ALWAYS** use shadcn UI components for every UI element
+- **ALWAYS** check shadcn UI catalog before considering any alternatives
+- **ALWAYS** compose complex UI from existing shadcn UI components
+- **ALWAYS** use shadcn UI's built-in variants and styling
 
 ## Project Status
 - **Framework**: Next.js with TypeScript
-- **Styling**: Tailwind CSS (already configured)
+- **Styling**: Tailwind CSS (already configured)  
+- **UI Policy**: shadcn UI EXCLUSIVELY - no exceptions
 - **shadcn UI Status**: Not yet initialized
 
 ## Initial Setup
@@ -23,6 +41,98 @@ This command will:
 - Set up the component directory structure
 - Configure Tailwind CSS for shadcn UI
 - Install necessary dependencies
+
+## 🔐 Clerk Authentication Integration - MANDATORY PATTERN
+
+**ALL authentication UI MUST use shadcn UI components with Clerk modals.** Never use Clerk's default UI components directly.
+
+### Required Components for Authentication
+```bash
+npx shadcn@latest add button
+npx shadcn@latest add dialog
+npx shadcn@latest add dropdown-menu
+```
+
+### ✅ CORRECT Authentication Pattern
+```tsx
+"use client";
+
+import { Button } from "@/components/ui/button";
+import { 
+  Dialog,
+  DialogContent,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { 
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { SignIn, SignUp, UserButton } from "@clerk/nextjs";
+
+// Sign In Button with Modal
+export function SignInButton() {
+  return (
+    <Dialog>
+      <DialogTrigger asChild>
+        <Button variant="default">Sign In</Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-md">
+        <SignIn routing="hash" />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// Sign Up Button with Modal  
+export function SignUpButton() {
+  return (
+    <Dialog>
+      <DialogTrigger asChild>
+        <Button variant="outline">Sign Up</Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-md">
+        <SignUp routing="hash" />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// User Profile Button (signed in state)
+export function UserProfileButton() {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="sm">
+          Profile
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent>
+        <DropdownMenuItem>
+          <UserButton afterSignOutUrl="/" />
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+```
+
+### ❌ FORBIDDEN Clerk Patterns
+```tsx
+// NEVER use Clerk components directly without shadcn UI
+<SignInButton /> // Raw Clerk component
+<UserButton />   // Without shadcn UI wrapper
+
+// NEVER create custom auth UI
+<button onClick={signIn}>Custom Sign In</button>
+```
+
+### Clerk Configuration Requirements
+- **ALWAYS** use `routing="hash"` for modal-based auth flows
+- **ALWAYS** wrap Clerk components in shadcn UI Dialogs
+- **ALWAYS** use shadcn UI Buttons as triggers
+- **NEVER** allow Clerk to redirect to separate auth pages
 
 ## Adding Components
 
@@ -65,13 +175,36 @@ npx shadcn@latest add avatar
 npx shadcn@latest add progress
 ```
 
-## Component Usage Guidelines
+## 📋 MANDATORY Component Usage Guidelines - NO EXCEPTIONS
 
-1. **Always use shadcn UI components** instead of custom HTML elements or other UI libraries
-2. **Import components** from the local components directory (typically `@/components/ui/`)
-3. **Customize styling** using Tailwind CSS classes when needed
-4. **Follow accessibility patterns** provided by shadcn UI components
-5. **Use TypeScript properly** with component props and interfaces
+### 🚫 ABSOLUTE PROHIBITIONS
+
+1. **NEVER create custom UI components** - if it's visual, it MUST be shadcn UI
+2. **NEVER use raw HTML for UI** - no `<button>`, `<input>`, `<div>`, etc. for interface elements
+3. **NEVER import from other UI libraries** - Material-UI, Ant Design, Chakra UI are BANNED
+4. **NEVER build custom styled-components** - use shadcn UI composition instead
+5. **NEVER use unstyled Radix UI directly** - always use the shadcn UI wrapper
+6. **NEVER create custom form controls** - use shadcn UI Form components
+
+### ✅ MANDATORY PRACTICES
+
+1. **ALWAYS use shadcn UI components** for every visual element
+2. **ALWAYS import components** from `@/components/ui/` directory  
+3. **ALWAYS check shadcn UI catalog first** before considering any implementation
+4. **ALWAYS compose complex UI** from existing shadcn UI components
+5. **ALWAYS use shadcn UI variants** (size, color, style) for customization
+6. **ALWAYS use the `cn()` utility** from `@/lib/utils` for conditional styling
+7. **ALWAYS follow TypeScript patterns** with proper component props and interfaces
+
+### 🔍 Component Selection Process
+
+**Before implementing ANY UI element:**
+
+1. **Check shadcn UI catalog** - does the exact component exist?
+2. **Check shadcn UI examples** - can you compose it from existing components? 
+3. **Check shadcn UI variants** - does a variant meet your needs?
+4. **If no exact match** - compose multiple shadcn UI components together
+5. **NEVER proceed with custom implementation** - always find a shadcn UI solution
 
 ## File Structure After Initialization
 
@@ -105,9 +238,51 @@ export function ExampleComponent() {
 }
 ```
 
-## Important Notes
+## 🔒 ENFORCEMENT RULES - ZERO TOLERANCE POLICY
 
-- **No other UI libraries** should be used in this project
-- **Always check** if a component exists in shadcn UI before creating custom components
-- **Prefer composition** over customization when building complex UI elements
-- **Use the `cn()` utility** from `@/lib/utils` for conditional className merging
+### ❌ AUTOMATIC REJECTION CRITERIA
+
+Any code that includes:
+
+- Custom UI components not based on shadcn UI
+- Raw HTML elements used for interface purposes  
+- Imports from other UI libraries
+- Custom styled-components outside shadcn UI patterns
+- Unstyled Radix UI components used directly
+- Any authentication UI that doesn't use shadcn UI + Clerk modal pattern
+
+**WILL BE REJECTED** - No exceptions, no workarounds, no "quick fixes"
+
+### ✅ ACCEPTANCE CRITERIA
+
+All UI implementations must:
+
+- **Use ONLY shadcn UI components** from `@/components/ui/`
+- **Follow Clerk modal authentication pattern** specified above
+- **Compose complex UI** from multiple shadcn UI components when needed
+- **Use proper shadcn UI variants and styling patterns**
+- **Include proper TypeScript typing** with shadcn UI interfaces
+
+### 📚 Required Knowledge
+
+**Before coding any UI, review:**
+
+1. [shadcn UI Components](https://ui.shadcn.com/components) - complete catalog
+2. Component variants and styling options
+3. Composition patterns for complex UI
+4. Clerk + shadcn UI modal integration (specified above)
+
+### 🎯 Success Pattern
+
+**Every UI element should follow this flow:**
+
+```
+Need UI Element → Check shadcn UI → Use exact component OR compose from multiple shadcn UI components → Style with variants/Tailwind → Done
+```
+
+**NEVER:**
+```
+Need UI Element → Create custom component → Style from scratch
+```
+
+This is not a suggestion - it is a **MANDATORY ARCHITECTURAL CONSTRAINT** that cannot be violated under any circumstances.

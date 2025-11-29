@@ -1,5 +1,5 @@
 ---
-alwaysApply: true
+alwaysApply: false
 ---
 # Data Handling & Server Architecture Patterns
 
@@ -7,16 +7,69 @@ This flashcard application follows strict server-side data handling patterns for
 
 ## Critical Architecture Rules
 
-### 1. Data Retrieval - Server Components ONLY
+### 1. Database Operations - Query Functions ONLY
 
-**ALL data fetching MUST be done in Server Components** - never in Client Components or API routes for display purposes.
+**ALL database interactions MUST be done through helper functions in the `lib/db/queries` directory** - never write raw database queries in Server Components or Server Actions.
+
+#### Required Query Function Structure:
 
 ```typescript
-// ✅ CORRECT - Server Component data fetching
-import { auth } from "@clerk/nextjs/server";
+// lib/db/queries/decks.ts
 import { db } from "@/lib/db";
-import { decksTable } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { decksTable, cardsTable } from "@/lib/db/schema";
+import { eq, and } from "drizzle-orm";
+
+// ✅ CORRECT - Dedicated query functions
+export async function createDeck(data: { title: string; description?: string; userId: string }) {
+  const [newDeck] = await db.insert(decksTable).values(data).returning();
+  return newDeck;
+}
+
+export async function updateDeck(deckId: number, userId: string, data: { title?: string; description?: string }) {
+  const [updatedDeck] = await db
+    .update(decksTable)
+    .set({ ...data, updatedAt: new Date() })
+    .where(and(eq(decksTable.id, deckId), eq(decksTable.userId, userId)))
+    .returning();
+  return updatedDeck;
+}
+
+export async function deleteDeck(deckId: number, userId: string) {
+  const [deletedDeck] = await db
+    .delete(decksTable)
+    .where(and(eq(decksTable.id, deckId), eq(decksTable.userId, userId)))
+    .returning();
+  return deletedDeck;
+}
+
+export async function getDeckWithCards(deckId: number, userId: string) {
+  // Verify deck ownership first
+  const deck = await db.select()
+    .from(decksTable)
+    .where(and(eq(decksTable.id, deckId), eq(decksTable.userId, userId)))
+    .limit(1);
+  
+  if (!deck.length) {
+    return null;
+  }
+  
+  const cards = await db.select()
+    .from(cardsTable)
+    .where(eq(cardsTable.deckId, deckId));
+  
+  return { deck: deck[0], cards };
+}
+```
+
+### 2. Data Retrieval - Server Components with Query Functions
+
+**Server Components MUST call query functions** - never write database queries directly in components.
+
+```typescript
+// ✅ CORRECT - Server Component using query functions
+import { auth } from "@clerk/nextjs/server";
+import { redirect } from "next/navigation";
+import { getUserDecks } from "@/lib/db/queries/decks";
 
 export default async function DecksPage() {
   const { userId } = await auth();
@@ -25,7 +78,23 @@ export default async function DecksPage() {
     redirect("/sign-in");
   }
   
-  // Data retrieval in Server Component
+  // Use query function - never raw database queries
+  const decks = await getUserDecks(userId);
+  
+  return <DecksDisplay decks={decks} />;
+}
+```
+
+```typescript
+// ❌ FORBIDDEN - Raw database queries in Server Components
+import { db } from "@/lib/db";
+import { decksTable } from "@/lib/db/schema";
+import { eq } from "drizzle-orm";
+
+export default async function DecksPage() {
+  const { userId } = await auth();
+  
+  // NEVER write raw queries in components
   const decks = await db.select()
     .from(decksTable)
     .where(eq(decksTable.userId, userId));
@@ -51,17 +120,16 @@ export default function DecksPage() {
 }
 ```
 
-### 2. Database Mutations - Server Actions ONLY
+### 3. Database Mutations - Server Actions with Query Functions
 
-**ALL database inserts, updates, and deletes MUST use Server Actions** - never API routes or client-side operations.
+**Server Actions MUST call query functions for all mutations** - never write database operations directly in actions.
 
 ```typescript
-// ✅ CORRECT - Server Action for mutations
+// ✅ CORRECT - Server Action using query functions
 "use server";
 
 import { auth } from "@clerk/nextjs/server";
-import { db } from "@/lib/db";
-import { decksTable } from "@/lib/db/schema";
+import { createDeck as createDeckQuery } from "@/lib/db/queries/decks";
 import { createDeckSchema } from "@/lib/validations/deck";
 import { revalidatePath } from "next/cache";
 
@@ -74,18 +142,19 @@ export async function createDeck(input: CreateDeckInput) {
   const { userId } = await auth();
   
   if (!userId) {
-    throw new Error("Authentication required");
+    return { success: false, error: "Authentication required" };
   }
   
-  // Zod validation (required)
-  const validatedInput = createDeckSchema.parse(input);
-  
   try {
-    const [newDeck] = await db.insert(decksTable).values({
+    // Zod validation (required)
+    const validatedInput = createDeckSchema.parse(input);
+    
+    // Use query function - never raw database operations
+    const newDeck = await createDeckQuery({
       title: validatedInput.title,
       description: validatedInput.description,
       userId,
-    }).returning();
+    });
     
     revalidatePath("/decks");
     return { success: true, data: newDeck };
@@ -93,6 +162,27 @@ export async function createDeck(input: CreateDeckInput) {
     console.error("Failed to create deck:", error);
     return { success: false, error: "Failed to create deck" };
   }
+}
+```
+
+```typescript
+// ❌ FORBIDDEN - Raw database operations in Server Actions
+"use server";
+
+import { db } from "@/lib/db";
+import { decksTable } from "@/lib/db/schema";
+
+export async function createDeck(input: CreateDeckInput) {
+  const { userId } = await auth();
+  
+  // NEVER write raw database operations in actions
+  const [newDeck] = await db.insert(decksTable).values({
+    title: input.title,
+    description: input.description,
+    userId,
+  }).returning();
+  
+  return { success: true, data: newDeck };
 }
 ```
 
@@ -106,9 +196,9 @@ export async function POST(request: Request) {
 }
 ```
 
-### 3. Data Validation - Zod Schemas REQUIRED
+### 4. Data Validation - Zod Schemas REQUIRED
 
-**ALL data MUST be validated using Zod schemas** before any database operations.
+**ALL data MUST be validated in Server Actions before calling query functions.**
 
 **Required Validation Setup:**
 ```typescript
@@ -137,12 +227,36 @@ export type UpdateDeckInput = z.infer<typeof updateDeckSchema>;
 export type CreateCardInput = z.infer<typeof createCardSchema>;
 ```
 
-### 4. Server Action Input Patterns
-
-**NEVER use FormData as parameter type** - always use typed interfaces with Zod validation.
+**Query Functions Should NOT Handle Validation** - validation happens in Server Actions:
 
 ```typescript
-// ✅ CORRECT - Typed input with Zod validation
+// lib/db/queries/cards.ts
+// ✅ CORRECT - Query functions receive validated data
+export async function createCard(data: { deckId: number; front: string; back: string }) {
+  const [newCard] = await db.insert(cardsTable).values(data).returning();
+  return newCard;
+}
+
+// ❌ FORBIDDEN - Query functions should not handle validation
+export async function createCard(rawData: any) {
+  const validatedData = createCardSchema.parse(rawData); // Don't do validation here
+  // ... rest of implementation
+}
+```
+
+### 5. Server Action Input Patterns
+
+**Server Actions MUST validate input with Zod, then call query functions with validated data.**
+
+```typescript
+// ✅ CORRECT - Server Action with validation and query function call
+"use server";
+
+import { auth } from "@clerk/nextjs/server";
+import { updateCard as updateCardQuery } from "@/lib/db/queries/cards";
+import { updateCardSchema } from "@/lib/validations/card";
+import { revalidatePath } from "next/cache";
+
 interface UpdateCardInput {
   id: number;
   front?: string;
@@ -150,8 +264,36 @@ interface UpdateCardInput {
 }
 
 export async function updateCard(input: UpdateCardInput) {
-  const validatedInput = updateCardSchema.parse(input);
-  // ... rest of implementation
+  const { userId } = await auth();
+  
+  if (!userId) {
+    return { success: false, error: "Authentication required" };
+  }
+  
+  try {
+    // Validate input in Server Action
+    const validatedInput = updateCardSchema.parse(input);
+    
+    // Call query function with validated data
+    const updatedCard = await updateCardQuery(
+      validatedInput.id,
+      userId,
+      {
+        front: validatedInput.front,
+        back: validatedInput.back,
+      }
+    );
+    
+    if (!updatedCard) {
+      return { success: false, error: "Card not found or access denied" };
+    }
+    
+    revalidatePath("/decks");
+    return { success: true, data: updatedCard };
+  } catch (error) {
+    console.error("Failed to update card:", error);
+    return { success: false, error: "Failed to update card" };
+  }
 }
 ```
 
@@ -163,12 +305,26 @@ export async function updateCard(formData: FormData) {
 }
 ```
 
-### 5. Client Component Integration
+```typescript
+// ❌ FORBIDDEN - Raw database operations in Server Action
+export async function updateCard(input: UpdateCardInput) {
+  // NEVER write database operations directly in actions
+  const [updatedCard] = await db
+    .update(cardsTable)
+    .set(input)
+    .where(eq(cardsTable.id, input.id))
+    .returning();
+  
+  return { success: true, data: updatedCard };
+}
+```
 
-**Client Components receive validated, typed data as props** and call Server Actions for mutations.
+### 6. Client Component Integration
+
+**Client Components receive validated, typed data as props** and call Server Actions for mutations. Client Components never interact with database queries directly.
 
 ```typescript
-// ✅ CORRECT - Client Component pattern
+// ✅ CORRECT - Client Component calls Server Actions only
 "use client";
 
 import { Card, CardContent } from "@/components/ui/card";
@@ -185,6 +341,8 @@ interface FlashcardProps {
 
 export function Flashcard({ card }: FlashcardProps) {
   const handleUpdate = async () => {
+    // Client components only call Server Actions
+    // Server Actions handle validation and call query functions
     const result = await updateCard({
       id: card.id,
       front: "Updated front",
@@ -207,14 +365,40 @@ export function Flashcard({ card }: FlashcardProps) {
 }
 ```
 
+```typescript
+// ❌ FORBIDDEN - Client Component calling query functions directly
+"use client";
+
+import { updateCard as updateCardQuery } from "@/lib/db/queries/cards";
+
+export function Flashcard({ card }: FlashcardProps) {
+  const handleUpdate = async () => {
+    // NEVER call query functions from client components
+    const result = await updateCardQuery(card.id, userId, {
+      front: "Updated front",
+      back: "Updated back"
+    });
+  };
+  
+  return <Card>...</Card>;
+}
+```
+
 ## Required File Structure
 
-### Server Actions Directory
+### Database Layer Architecture
 ```
 lib/
+├── db/
+│   ├── index.ts      # Database connection
+│   ├── schema.ts     # Drizzle schema definitions
+│   └── queries/      # Database query functions (NEW REQUIREMENT)
+│       ├── decks.ts  # All deck-related database operations
+│       ├── cards.ts  # All card-related database operations
+│       └── index.ts  # Export all query functions
 ├── actions/
-│   ├── decks.ts      # Deck-related server actions
-│   ├── cards.ts      # Card-related server actions
+│   ├── decks.ts      # Deck-related server actions (call query functions)
+│   ├── cards.ts      # Card-related server actions (call query functions)
 │   └── index.ts      # Export all actions
 └── validations/
     ├── deck.ts       # Deck Zod schemas
@@ -222,36 +406,85 @@ lib/
     └── index.ts      # Export all schemas
 ```
 
-### Validation Imports
+### Required Import Patterns
+
+**Query Functions (in db/queries/):**
 ```typescript
-import { z } from "zod";
-import { createDeckSchema, updateDeckSchema } from "@/lib/validations/deck";
-import { createCardSchema, updateCardSchema } from "@/lib/validations/card";
+import { db } from "@/lib/db";
+import { decksTable, cardsTable } from "@/lib/db/schema";
+import { eq, and, or, desc, asc } from "drizzle-orm";
 ```
+
+**Server Actions (in actions/):**
+```typescript
+import { auth } from "@clerk/nextjs/server";
+import { revalidatePath } from "next/cache";
+import { createDeckSchema, updateDeckSchema } from "@/lib/validations/deck";
+import { createDeck as createDeckQuery, getUserDecks } from "@/lib/db/queries/decks";
+```
+
+**Server Components:**
+```typescript
+import { auth } from "@clerk/nextjs/server";
+import { redirect } from "next/navigation";
+import { getUserDecks, getDeckWithCards } from "@/lib/db/queries/decks";
+```
+
+### Data Flow Architecture
+
+```
+Client Component → Server Action → Query Function → Database
+      ↑                ↑              ↑
+   UI Logic      Validation &     Raw Database
+                 Auth Check       Operations
+```
+
+**CRITICAL**: Each layer has a specific responsibility:
+- **Client Components**: UI and user interactions only
+- **Server Actions**: Authentication, validation, error handling
+- **Query Functions**: Database operations and data access patterns
+- **Database**: Raw data storage
 
 ## Error Handling Patterns
 
 ### Server Action Error Handling
+Server Actions handle authentication, validation, and call query functions with proper error handling:
+
 ```typescript
+// lib/actions/decks.ts
+"use server";
+
+import { auth } from "@clerk/nextjs/server";
+import { createDeck as createDeckQuery } from "@/lib/db/queries/decks";
+import { createDeckSchema } from "@/lib/validations/deck";
+import { revalidatePath } from "next/cache";
+import { z } from "zod";
+
 export async function createDeck(input: CreateDeckInput) {
   try {
+    // 1. Authentication check
     const { userId } = await auth();
     
     if (!userId) {
       return { success: false, error: "Authentication required" };
     }
     
+    // 2. Input validation
     const validatedInput = createDeckSchema.parse(input);
     
-    const [newDeck] = await db.insert(decksTable).values({
-      ...validatedInput,
+    // 3. Call query function (never raw database operations)
+    const newDeck = await createDeckQuery({
+      title: validatedInput.title,
+      description: validatedInput.description,
       userId,
-    }).returning();
+    });
     
+    // 4. Cache revalidation
     revalidatePath("/decks");
     return { success: true, data: newDeck };
     
   } catch (error) {
+    // Handle validation errors
     if (error instanceof z.ZodError) {
       return { 
         success: false, 
@@ -266,19 +499,80 @@ export async function createDeck(input: CreateDeckInput) {
 }
 ```
 
+### Query Function Error Handling
+Query functions handle database-specific errors and should let them bubble up to Server Actions:
+
+```typescript
+// lib/db/queries/decks.ts
+export async function createDeck(data: { title: string; description?: string; userId: string }) {
+  try {
+    const [newDeck] = await db.insert(decksTable).values(data).returning();
+    return newDeck;
+  } catch (error) {
+    // Log database errors but let Server Actions handle user-facing errors
+    console.error("Database error in createDeck:", error);
+    throw error; // Let Server Action handle the error response
+  }
+}
+
+export async function getDeckWithCards(deckId: number, userId: string) {
+  try {
+    const deck = await db.select()
+      .from(decksTable)
+      .where(and(eq(decksTable.id, deckId), eq(decksTable.userId, userId)))
+      .limit(1);
+    
+    if (!deck.length) {
+      return null; // Return null for not found, don't throw
+    }
+    
+    const cards = await db.select()
+      .from(cardsTable)
+      .where(eq(cardsTable.deckId, deckId));
+    
+    return { deck: deck[0], cards };
+  } catch (error) {
+    console.error("Database error in getDeckWithCards:", error);
+    throw error;
+  }
+}
+```
+
 ## Mandatory Checklist
 
 For EVERY data operation, verify:
 
-1. ✅ **Server Component**: Data fetching done in Server Component
-2. ✅ **Server Action**: Mutations done via Server Actions (not API routes)
-3. ✅ **Zod Validation**: Input validated with Zod schema
-4. ✅ **TypeScript Types**: Proper TypeScript interfaces (not FormData)
-5. ✅ **Auth Check**: User authentication verified
-6. ✅ **Error Handling**: Proper error handling with typed responses
-7. ✅ **Revalidation**: `revalidatePath()` called after mutations
+1. ✅ **Query Functions**: ALL database operations done via `lib/db/queries/` functions
+2. ✅ **Server Component**: Data fetching done in Server Component calling query functions
+3. ✅ **Server Action**: Mutations done via Server Actions (not API routes) calling query functions
+4. ✅ **Zod Validation**: Input validated with Zod schema in Server Actions
+5. ✅ **TypeScript Types**: Proper TypeScript interfaces (not FormData)
+6. ✅ **Auth Check**: User authentication verified in Server Actions
+7. ✅ **Error Handling**: Proper error handling with typed responses
+8. ✅ **Revalidation**: `revalidatePath()` called after mutations
+9. ✅ **Layer Separation**: No raw database queries outside of query functions
 
 ## Anti-Patterns to AVOID
+
+### ❌ Raw Database Operations Outside Query Functions
+```typescript
+// NEVER do this in Server Actions
+"use server";
+import { db } from "@/lib/db";
+
+export async function createDeck(input: CreateDeckInput) {
+  // FORBIDDEN - raw database operations in Server Actions
+  const [newDeck] = await db.insert(decksTable).values(input).returning();
+}
+```
+
+```typescript
+// NEVER do this in Server Components
+export default async function DecksPage() {
+  // FORBIDDEN - raw database queries in Server Components
+  const decks = await db.select().from(decksTable).where(eq(decksTable.userId, userId));
+}
+```
 
 ### ❌ Client-Side Data Fetching
 ```typescript
@@ -290,6 +584,31 @@ const { data } = useSWR("/api/decks", fetch);
 ```typescript
 // NEVER do this
 export async function POST() { /* mutation logic */ }
+```
+
+### ❌ Query Functions Called from Client Components
+```typescript
+// NEVER do this
+"use client";
+import { getUserDecks } from "@/lib/db/queries/decks";
+
+export function ClientComponent() {
+  const handleClick = async () => {
+    // FORBIDDEN - client components cannot call query functions
+    const decks = await getUserDecks(userId);
+  };
+}
+```
+
+### ❌ Validation in Query Functions
+```typescript
+// NEVER do this in query functions
+import { createDeckSchema } from "@/lib/validations/deck";
+
+export async function createDeck(input: any) {
+  // FORBIDDEN - validation should happen in Server Actions
+  const validatedInput = createDeckSchema.parse(input);
+}
 ```
 
 ### ❌ Unvalidated Data
@@ -304,4 +623,56 @@ export async function createDeck(input: any) { /* no validation */ }
 export async function createDeck(formData: FormData) { /* unsafe */ }
 ```
 
-**CRITICAL**: These patterns are not suggestions - they are mandatory for security, type safety, and maintainability. All code MUST follow these patterns.
+## Required Import Rules
+
+### ❌ FORBIDDEN Imports
+
+**Server Components and Server Actions should NEVER import:**
+```typescript
+// NEVER import database connection or schema outside of query functions
+import { db } from "@/lib/db"; // FORBIDDEN outside of lib/db/queries/
+import { decksTable } from "@/lib/db/schema"; // FORBIDDEN outside of lib/db/queries/
+import { eq, and } from "drizzle-orm"; // FORBIDDEN outside of lib/db/queries/
+```
+
+**Client Components should NEVER import:**
+```typescript
+// NEVER import query functions in client components
+import { getUserDecks } from "@/lib/db/queries/decks"; // FORBIDDEN in client components
+```
+
+### ✅ REQUIRED Imports
+
+**Query Functions (lib/db/queries/) MUST import:**
+```typescript
+import { db } from "@/lib/db";
+import { decksTable, cardsTable } from "@/lib/db/schema";
+import { eq, and, or, desc, asc } from "drizzle-orm";
+```
+
+**Server Actions MUST import:**
+```typescript
+import { auth } from "@clerk/nextjs/server";
+import { revalidatePath } from "next/cache";
+import { createDeckSchema } from "@/lib/validations/deck";
+import { createDeck as createDeckQuery } from "@/lib/db/queries/decks";
+```
+
+**Server Components MUST import:**
+```typescript
+import { auth } from "@clerk/nextjs/server";
+import { getUserDecks } from "@/lib/db/queries/decks";
+```
+
+**CRITICAL**: These patterns are not suggestions - they are mandatory for security, type safety, maintainability, and proper separation of concerns. 
+
+### Absolute Requirements:
+
+1. **ALL database operations** MUST be isolated in `lib/db/queries/` functions
+2. **Server Components** MUST call query functions for data fetching (never raw database queries)
+3. **Server Actions** MUST call query functions for mutations (never raw database operations)
+4. **Client Components** MUST only call Server Actions (never query functions directly)
+5. **Query Functions** MUST only handle database operations (never validation or authentication)
+6. **Server Actions** MUST handle authentication, validation, and call query functions
+
+**Any deviation from these patterns will be rejected.** This architecture ensures proper separation of concerns, reusability, testability, and security.

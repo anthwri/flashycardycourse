@@ -54,7 +54,7 @@ export default async function DeckPage() {
   const { userId } = await auth();
   
   if (!userId) {
-    redirect("/sign-in");
+    redirect("/");
   }
   
   // Safe to access user data with userId
